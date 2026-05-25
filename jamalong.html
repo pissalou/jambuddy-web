@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Jam Along: Beat the Pulse</title>
+</head>
+<body>
+    <!-- see https://codepen.io/pissalou/pen/MYKWeRz -->
+    <script src="./WAAClock-0.5.5.js"></script>
+    <script src="https://www.verovio.org/javascript/latest/verovio-toolkit-wasm.js" type="module"></script>
+    <button id="animatebtn" onclick="animate();" style="top: 0; float: left;">Start</button>
+    <div id="notation-output"></div>
+    <script> <!-- cannot be type="module" atm -->
+    document.addEventListener("DOMContentLoaded", (event) => {
+      console.log('Loading module ' + verovio.toolkit + '...');
+      verovio.module.onRuntimeInitialized = async _ => {
+        let tk = new verovio.toolkit();
+        globalThis.__tk = tk; // for debugging
+        console.log("Verovio has loaded!");
+        tk.setOptions({
+          header: 'none',
+          scale: 99,
+          expand: 'expansion-default',
+          transpose: '+0',
+          landscape: true,
+          adjustPageHeight: false,
+          adjustPageWidth: false,
+          pageHeight: 1400, // if landscape, height becomes width
+          pageWidth: 800,   // if landscape, width becomes height
+          evenNoteSpacing: false,
+          spacingLinear: 0.25,
+          spacingNonLinear: 0.6,
+          footer: 'none'
+        });
+        var meiXML = `
+            <?xml version="1.0" encoding="UTF-8"?>
+            <?xml-model href="https://music-encoding.org/schema/dev/mei-all.rng" type="application/xml" schematypens="http://relaxng.org/ns/structure/1.0"?>
+            <?xml-model href="https://music-encoding.org/schema/dev/mei-all.rng" type="application/xml" schematypens="http://purl.oclc.org/dsdl/schematron"?>
+            <mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.0">
+                <music>
+                    <body>
+                        <mdiv>
+                            <score>
+                                <scoreDef>
+                                    <staffGrp>
+                                        <staffDef n="1" lines="5" clef.shape="G" clef.line="2"/>
+                                    </staffGrp>
+                                </scoreDef>
+                                <section>
+                                    <measure n="1">
+                                        <staff n="1">
+                                            <layer n="1">
+                                                <note pname="g" oct="4" dur="4" head.shape="x"/>
+                                                <note pname="g" oct="4" dur="4" head.shape="x"/>
+                                                <note pname="g" oct="4" dur="4" head.shape="x"/>
+                                                <note pname="g" oct="4" dur="4" head.shape="x"/>
+                                            </layer>
+                                        </staff>
+                                    </measure>
+                                </section>
+                            </score>
+                        </mdiv>
+                    </body>
+                </music>
+            </mei>
+        `;
+        console.log('MEI XML loaded!');
+        // Highlight. ref. https://github.com/rism-ch/verovio-tutorial/blob/gh-pages/topic09-midi.html
+        tk.loadData(meiXML);
+        let base64midi = tk.renderToMIDI();
+        let previous_note_ids = [];
+        const LATENCY = 0; // TODO adjust later
+        window.highlightTime = function(time) { // time in ms
+              // time needs to - 400 for compensating latency with midi synth
+              var vrvTime = Math.max(0, time - LATENCY);
+              console.log("Highlighting time@" + vrvTime + "..");
+              var elementsattime = __tk.getElementsAtTime(vrvTime);
+              console.log("Elements at time: " + JSON.stringify(elementsattime));
+              elementsattime.notes.forEach(noteid => {
+                console.log("Highlighting note " + noteid + "...");
+                // TODO find the right note out of document.querySelectorAll("g.note")
+                document.querySelector("g#" + noteid).setAttribute("fill", "#c00");
+                document.querySelector("g#" + noteid).setAttribute("stroke", "#c00");
+              });
+        }
+        // Force a layout recalculation after changing options
+        tk.redoLayout();
+        console.log("Rendering " + tk.getPageCount() + " page(s)...");
+        let svg = tk.renderToSVG(1);
+        const notation = document.getElementById("notation-output")
+        notation.innerHTML = svg;
+        // TODO: activate button
+      } // end of verovio.module.onRuntimeInitialized
+    });
+    </script>
+    <script>
+        document.querySelector("#animatebtn").onclick = function() {
+          console.log("Starting animation...");
+          // Initialize AudioContext and WAAClock
+          const audioCtx = new AudioContext();
+          const clock = new WAAClock(audioCtx);
+          clock.start();
+            // 4. Schedule audio events using WAAClock
+            clock.callbackAtTime((event) => {
+                console.log("Clock callback at time: " + clock.context.currentTime);
+                window.highlightTime(clock.context.currentTime * 1000);
+            }, audioCtx.currentTime).repeat(1/2); // Repeats at ...Hz
+        }
+    </script>
+</body>
+</html>

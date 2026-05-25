@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>WAAClock / WEBMIDI.js sync</title>
+</head>
+<body>
+    <button>&#9654;</button>
+    <label>BPM:</label>
+    <input type="range" id="bmp" name="bpm" min="30" max="300" value="120" title="120" step="1" list="markers" style="width: 80%;">
+    <datalist id="markers">
+      <option value="30"></option>
+      <option value="60"></option>
+      <option value="90"></option>
+      <option value="120" label="120"></option><!-- TODO display labels -->
+      <option value="150"></option>
+      <option value="180"></option>
+      <option value="210"></option>
+      <option value="240"></option>
+      <option value="270"></option>
+      <option value="300"></option>
+    </datalist>
+    <div id="output">&nbsp;</div>
+    <script type="module">
+        console.log("Hello WAAClock / WEBMIDI.js!");
+        import WAAClock from "https://cdn.jsdelivr.net/npm/waaclock@0.5.5/+esm";
+        import {WebMidi} from 'https://cdn.jsdelivr.net/npm/webmidi@3.1.16/+esm'
+        const output = document.getElementById("output");
+
+        let bpm = 120;
+        const midiChannel = 10;
+
+        // Enable WEBMIDI.js and trigger the onEnabled() function when ready
+        WebMidi
+          .enable()
+          .then(onEnabled)
+          .catch(err => alert(err));
+        // Function triggered when WEBMIDI.js is ready
+        function onEnabled() {
+          // Display available MIDI input devices
+          if (WebMidi.inputs.length < 1) {
+            output.innerHTML+= "No device detected.";
+          } else {
+            output.innerHTML+= "<br>Available MIDI input devices: <br>";
+            WebMidi.inputs.forEach((device, index) => {
+              output.innerHTML+= `${index}: ${device.name} <br>`;
+              // TODO present devices better and allow user to select one or more devices
+              // TODO display MIDI note map and allow user to select which MIDI note to trigger
+              // based on for (const note of Array.from({ length: 10 }, (_, i) => 80 - i)) { console.log(`note ${note}`); midiOutput.playNote(note, 10); await sleep(1000); }
+              // Expose globally, for debugging purposes
+              window.midiOutput = WebMidi.outputs[1];
+            });
+          }
+        }
+
+        const clickSound = new Audio(URL.createObjectURL(new Blob([Uint8Array.from(atob("UklGRiwBAABXQVZFZm10IBAAAAABAAEAIlYAACJWAAABAAgAZGF0YQgBAACAs9319+TAkWA2GhEcOGCNttXj4Muqglo6JyUyTXGWtsvTzLeZd1dANDZFXnybs8LEu6eMcFdHQEVUa4Wdr7i3rZqDbFlOS1JhdYqdqq+soZB9alxVVV1rfI2cpaeil4h4amBbXmZygY+aoKCakIN2amNhZW14hI+Xm5mTin90bGdna3N8ho+VlpSOhnx0bmtscHd/iI6Sko+Kgnt0cG5wdHuCiI2Pj4uGgHp1cnFzeH2DiIuNi4iDfnl2dHR2en+EiIqKiYaBfXl3dnZ5fICEh4iIh4SAfHp4d3h7foGEhoeGhYJ/fHp5eXp8f4KEhYaFg4F+fHt6ent9gIKEhYWEgoB+fHt7e30="), c => c.charCodeAt(0))], { type: "audio/wav" })));
+        function playClick() {
+            clickSound.currentTime = 0; clickSound.play().catch(err => console.log("Playback blocked until user interaction:", err));
+        }
+
+        console.log("Page loaded, waiting for user gesture...");
+        const audioContext = new AudioContext();
+        const clock = new WAAClock(audioContext);
+        let scheduledEvents = [];
+        document.querySelector("button").onclick = () => {
+          console.log(`Scheduling events within ${audioContext.state} context...`);
+          if (audioContext.state === "suspended") {
+            audioContext.resume();
+          }
+          clock.stop();  // in case it is already started
+          clock.start();
+          let index = 1;
+          let eventSchedule = Array.from({ length: 12 }, (_, index) => 60*index/bpm);  // schedule events at these times (in seconds)
+          eventSchedule.forEach((time, index) => {
+              let scheduledEvent = clock.callbackAtTime(() => {
+                output.innerHTML+= `<br>Event ${index + 1} triggered`;
+                playClick();
+                WebMidi.outputs[1].playNote("75", midiChannel);  // note 37: Sidestick, note 75: claves
+                // or midiOutput.send([0x99, 75, 100])
+              }, audioContext.currentTime + time);
+              scheduledEvents.push(scheduledEvent);
+          });
+        };
+
+        // change to use triggered by onchange (final) rather than oninput (real-time) to avoid rescheduling too many events while dragging the slider
+        document.querySelector("input[type=range]").onchange = (event) => {
+          const newTempo = event.target.value;
+          console.log(`Setting new tempo to ${newTempo} BPM...`);
+          clock.timeStretch(audioContext.currentTime, scheduledEvents, bpm / newTempo)
+          bpm = newTempo
+        };
+    </script>
+</body>
+</html>

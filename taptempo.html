@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Tap Tempo</title>
+</head>
+<body>
+    <p class="instructions">Send MIDI notes at least 3 times to calculate the BPM.</p>
+    <dl id="bpm">
+        <dt>BPM</dt>
+        <dd>&nbsp;</dd>
+    </dl>
+    <script type="module">
+        import {WebMidi} from 'https://cdn.jsdelivr.net/npm/webmidi@3.1.16/+esm'
+        const bpmDisplay = document.querySelector("#bpm dd");
+        let tapTimes = [];
+        WebMidi
+          .enable()
+          .then(() => {
+            if (WebMidi.inputs.length < 1) {
+              bpmDisplay.textContent = "No MIDI device detected.";
+            } else {
+              WebMidi.inputs.forEach((device, index) => {
+                device.addListener("noteon", e => {
+                  tapTimes.push(e.timestamp);
+                  if (tapTimes.length > 3) tapTimes.shift();
+                  if (tapTimes.length >= 2) {
+                    const intervals = tapTimes.slice(1).map((t, i) => t - tapTimes[i]);
+                    const avgInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+                    const bpm = Math.round(60000 / avgInterval);
+                    bpmDisplay.textContent = bpm;
+                  }
+                });
+              });
+            }
+          })
+          .catch(err => alert(err));
+    </script>
+</body>
+</html>
