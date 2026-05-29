@@ -6,9 +6,32 @@
     <script src="./music-notation.js"></script>
 </head>
 <body>
+<button id="playbtn">&#9654;</button>
 <music-notation
         url="todo:load_file.mei_or_file.abc"
         zoom="70">
 </music-notation>
+
+<script type="module">
+    function highlightCurrentNotes(time) {
+        let currentNoteIds = window.__tk?.getElementsAtTime(time)?.notes;
+        console.log(`Current note IDs at time ${time}: ${currentNoteIds}`);
+        let musicNotationElement = document.querySelector('music-notation').shadowRoot;
+        musicNotationElement.querySelectorAll('g.note').forEach(el => el.classList.remove('highlight')); // Clear previous highlights
+        musicNotationElement.querySelectorAll(currentNoteIds?.map(id => `g.note#${id}`).join(', ')).forEach(el => el.classList.add('highlight'));
+    }
+
+    document.getElementById('playbtn').addEventListener('click', async () => {
+        let time = 1; // in ms
+        highlightCurrentNotes(time);
+        await new Promise(resolve => setTimeout(resolve, 500)); // pause for 500ms
+        highlightCurrentNotes(time + 500);
+        await new Promise(resolve => setTimeout(resolve, 500)); // pause for 500ms
+        highlightCurrentNotes(time + 1000);
+        await new Promise(resolve => setTimeout(resolve, 500)); // pause for 500ms
+        highlightCurrentNotes(time + 1500);
+        // TODO: support measure repeats
+    });
+</script>
 </body>
 </html>

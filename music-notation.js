@@ -60,7 +60,13 @@ class MusicNotationCustomElement extends HTMLElement {
     this.zoom = this.getAttribute("zoom") || 20;
     this.pageNumber = this.getAttribute("pagenumber") || 1;
 
-    this.shadowRoot.innerHTML = '<div id="verovio-svg"></div>';
+    this.shadowRoot.innerHTML = `
+    <style>
+        g.highlight {
+            filter: url(assets/filters.svg#highlighting);
+        }
+    </style>
+    <div id="verovio-svg"></div>`;
   }
 
 
@@ -410,7 +416,7 @@ K:C
     this.totalPages = this.tk?.getPageCount();
     this.pageNumber = (!isNaN(this.pageNumber) && !isNaN(this.totalPages) && this.pageNumber >= 1 && this.pageNumber <= this.totalPages) ? this.pageNumber : 1;
     let svg = this.tk?.renderToSVG(this.pageNumber);
-    this.shadowRoot.getElementById("verovio-svg").innerHTML = svg;
+    this.shadowRoot.getElementById("verovio-svg").innerHTML = svg ? svg : 'Loading...';
     const svgElement = this.shadowRoot.querySelector("svg");
     // Calculate SVG dimensions based on viewBox
     const viewBox = svgElement?.getAttribute('viewBox');
