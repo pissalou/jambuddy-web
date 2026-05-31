@@ -32,7 +32,7 @@ class MusicNotationCustomElement extends HTMLElement {
   /** TODO: eventually move towards web worker to avoid freezing the main thread */
   constructor() {
     super();
-
+    console.log('Loading <music-notation> component...');
     /** attach shadow root with mode "open" */
     this.attachShadow({ mode: 'open' });
 
@@ -44,19 +44,19 @@ class MusicNotationCustomElement extends HTMLElement {
     this.veroviourl = this.getAttribute('verovio-url') || "https://www.verovio.org/javascript/6.2.0/verovio-toolkit-wasm.js";
     this.options = this.getAttribute("verovio-options") || {
           scale: 99,
-          expand: 'expansion-default',
+          expandAlways: true,
           transpose: '+0',
           landscape: true,
           adjustPageHeight: false,
           adjustPageWidth: false,
           pageHeight: 640, // if landscape, height becomes width
-          pageWidth: 280,   // if landscape, width becomes height
+          pageWidth: 280,  // if landscape, width becomes height
           evenNoteSpacing: false,
           spacingLinear: 0.25,
           spacingNonLinear: 0.6,
           footer: 'none'
     };
-
+    this.url = this.getAttribute("url") || null;
     this.zoom = this.getAttribute("zoom") || 20;
     this.pageNumber = this.getAttribute("pagenumber") || 1;
 
@@ -66,7 +66,8 @@ class MusicNotationCustomElement extends HTMLElement {
             filter: url(assets/filters.svg#highlighting);
         }
     </style>
-    <div id="verovio-svg"></div>`;
+    <div id="verovio-svg"></div>
+    <div id="midi-output" style="font-family: monospace; width: 7em"></div>`;
   }
 
 
@@ -74,7 +75,6 @@ class MusicNotationCustomElement extends HTMLElement {
    * Lifecycle callback invoked when the custom element is added to the DOM.
    */
   connectedCallback() {
-
     /** load the verovio library */
     import(this.veroviourl)
       .then((_) => {
@@ -82,19 +82,21 @@ class MusicNotationCustomElement extends HTMLElement {
         verovio.module.onRuntimeInitialized = () => {
           this.tk = new verovio.toolkit();
           /** set rendering options for verovio */
-          this.tk.setOptions({ ...this.options, inputFrom: 'abc' });
           /** fetch the mei file and render svg */
-          this.tk.loadData(`
-X: 1
-T: Follow the beat
-M: 4/4
-L: 1/4
-P: N4
-K:C
-|:[P:N] "^x3" G G G G :|`);
-          this.renderSVG();
-          //console.log(this.tk);
-          window.__tk = this.tk;  // for debugging
+          console.log(`Loading MEI data from: ${this.url}`);
+          fetch(this.url)
+              .then((response) => response.text())
+              .then((mei) => {
+                this.meiData = mei;
+                this.tk.setOptions(this.options);
+                // if (abc) this.tk.setOptions({ ...this.options, inputFrom: 'abc' });
+                this.tk.loadData(mei); // Load MEI
+                this.renderSVG();      // Render
+              })
+              .catch((error) => {
+                console.error("Error fetching MEI:", error);
+              });
+          window.__tk = this.tk;  // for html to call getElementsAtTime
         };
       })
       .catch((err) => {
@@ -109,7 +111,7 @@ K:C
    * @returns {Array<string>} The list of observed attributes.
    */
   static get observedAttributes() {
-    return ['zoom', 'pagenumber', 'data', 'elementid', 'measurenumber', 'mdivname', "movementid", "pagewidth", "pageheight", "verovio-url", "verovio-options", "verovio-breaks"];
+    return ['zoom', 'pagenumber', 'url', 'elementid', 'measurenumber', 'mdivname', "movementid", "pagewidth", "pageheight", "verovio-url", "verovio-options", "verovio-breaks"];
   }
 
   /**
@@ -413,9 +415,15 @@ K:C
    * @fires CustomEvent#page-info-update - Dispatched after rendering, contains the current page number and total pages.
    */
   renderSVG() {
-    this.totalPages = this.tk?.getPageCount();
+    if (!this.tk) return;
+    this.totalPages = this.tk.getPageCount();
     this.pageNumber = (!isNaN(this.pageNumber) && !isNaN(this.totalPages) && this.pageNumber >= 1 && this.pageNumber <= this.totalPages) ? this.pageNumber : 1;
-    let svg = this.tk?.renderToSVG(this.pageNumber);
+    let svg = this.tk.renderToSVG(this.pageNumber);
+    let base64midi = this.tk.renderToMIDI();
+    //let timemap = this.tk.renderToTimemap();
+    console.log('MIDI data (base64):', base64midi);
+    //console.log('Timemap data:', timemap);
+    this.shadowRoot.querySelector("#midi-output").innerText = "XX " + Array.from(atob(base64midi)).map(c => c.charCodeAt(0).toString(16).padStart(2, '0')).join(' ');
     this.shadowRoot.getElementById("verovio-svg").innerHTML = svg ? svg : 'Loading...';
     const svgElement = this.shadowRoot.querySelector("svg");
     // Calculate SVG dimensions based on viewBox

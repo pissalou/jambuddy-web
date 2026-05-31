@@ -6,32 +6,50 @@
     <script src="./music-notation.js"></script>
 </head>
 <body>
-<button id="playbtn">&#9654;</button>
-<music-notation
-        url="todo:load_file.mei_or_file.abc"
-        zoom="70">
-</music-notation>
+<!-- transport element -->
+<button id="playbtn" style="height: 2.1em">&#9654;</button>
+<button id="stopbtn">&#x23F9;</button>
+<dl style="display: inline-flex"><dt>BPM:</dt><dd id="bpm" style="margin: 0 0.5em">120</dd></dl>
+<!-- end of transport --->
+<music-notation url="./4_4_beat.mei.xml" zoom="70"></music-notation>
 
 <script type="module">
+    import WAAClock from "https://cdn.jsdelivr.net/npm/waaclock@0.5.5/+esm";
+
+    let bpm = 120; // TODO: make this user-configurable
+    let ppqn = 1; // 24, 96 or based on midi file
+    const audioContext = new AudioContext();
+    let clock = new WAAClock(audioContext);
+
     function highlightCurrentNotes(time) {
         let currentNoteIds = window.__tk?.getElementsAtTime(time)?.notes;
         console.log(`Current note IDs at time ${time}: ${currentNoteIds}`);
         let musicNotationElement = document.querySelector('music-notation').shadowRoot;
         musicNotationElement.querySelectorAll('g.note').forEach(el => el.classList.remove('highlight')); // Clear previous highlights
-        musicNotationElement.querySelectorAll(currentNoteIds?.map(id => `g.note#${id}`).join(', ')).forEach(el => el.classList.add('highlight'));
+        musicNotationElement.querySelectorAll(currentNoteIds?.map(id => `g.note#${id.replace(/-rend\d+$/,'')}`).join(', ')).forEach(el => el.classList.add('highlight'));
     }
 
     document.getElementById('playbtn').addEventListener('click', async () => {
-        let time = 1; // in ms
-        highlightCurrentNotes(time);
-        await new Promise(resolve => setTimeout(resolve, 500)); // pause for 500ms
-        highlightCurrentNotes(time + 500);
-        await new Promise(resolve => setTimeout(resolve, 500)); // pause for 500ms
-        highlightCurrentNotes(time + 1000);
-        await new Promise(resolve => setTimeout(resolve, 500)); // pause for 500ms
-        highlightCurrentNotes(time + 1500);
-        // TODO: support measure repeats
+        if (audioContext.state === 'suspended') await audioContext.resume();
+        console.log("Starting clock...");
+        clock.start();
+        const playbackStartTime = audioContext.currentTime + 0.01; // Start slightly in the future to ensure scheduling works
+        let tstamp = 1; // should not be 0 as getElementsAtTime would return both the note on and note off
+        let pulseEvent = clock.callbackAtTime((event) => {
+            // TODO play click sound
+            // TODO check midi input events against timemap and trigger note coloring
+            let time_ms = tstamp; //Math.round((audioContext.currentTime - playbackStartTime) * 1000);
+            console.log(`Pulse@${time_ms}ms since start`);
+            highlightCurrentNotes(time_ms);
+            tstamp += 500;
+        }, playbackStartTime).repeat(0.5); // TODO: calculate repeat interval based on BPM and PPQN
     });
+
+    document.getElementById('stopbtn').addEventListener('click', async () => {
+        clock.stop();
+    });
+
+    window.clock = clock; // Expose globally for debugging purposes
 </script>
 </body>
 </html>
