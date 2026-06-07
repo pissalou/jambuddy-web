@@ -5,12 +5,16 @@
     <title>LookAhead</title>
 </head>
 <body>
-<button id="playbtn" style="height: 2.1em">&#9654;</button>
-<button id="stopbtn">&#x23F9;</button>
-<span id="timeline">00:00.000</span>
+<div id="midi-transport">
+    <button id="playbtn" style="height: 2.1em">&#9654;</button>
+    <button id="stopbtn">&#x23F9;</button>
+    <span id="timeline">00:00.000</span>
+</div>
 <script type="module">
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 const worker = new Worker('./lookahead-worker.js');
+const verovioWorker = new Worker('./verovio-worker.js');
+let timemap = null; // This will hold the mapping of musical time to realtime for visual sync
 let bpm = 120;
 const ppqn = 24; // Pulses Per Quarter Note (standard MIDI timing)
 let lookAhead = 0.050; // 50ms look-ahead window
@@ -88,10 +92,36 @@ function audio2midiTimestamp(audioTargetTime) {
   return performance.now() + (secondsInFuture * 1000);
 }
 
+function getSvgElementsAtTime(audioTargetTime) {
+  if (!timemap || timemap.length === 0) return { on: [], off: [] };
+  const elapsedMs = (audioTargetTime - startTime) * 1000;
+  let closest = timemap[0];
+  for (const entry of timemap) {
+    if (entry.tstamp <= elapsedMs) {
+      closest = entry;
+    } else {
+      break; // timemap is sorted by tstamp
+    }
+  }
+  return closest;
+}
+
 // 4. The worker heartbeat loop
 worker.onmessage = function(e) {
   if (e.data === 'tick') {
     // console.log(`Received tick at ${audioCtx.currentTime.toFixed(3) * 1000}ms`);
+    let svgElementMap = getSvgElementsAtTime(audioCtx.currentTime);
+    //console.log(svgElementMap);  // map of on/off notes as arrays
+    if (!svgElementMap.on) { stopMetronome(); return; }// No more events in the timemap, stop
+    svgElementMap.on.forEach(id => {
+      id = id.replace(/-rend\d+$/,'');
+      //console.log(`Highlighting element ${id} at time ${audioCtx.currentTime.toFixed(3)}s`);
+      document.getElementById(id).style.fill = 'red'; // Highlight the element that should be played
+    });
+    svgElementMap.off?.forEach(id => {
+      id = id.replace(/-rend\d+$/,'');
+      document.getElementById(id).style.fill = ''; // Highlight the element that should be played
+    });
     while (nextSppTime < audioCtx.currentTime + lookAhead) {
       nextSppTime = startTime + spp * (60.0 / bpm / 4); // Time duration of a sixteenth note TODO calculate with ppqn
       spp += 1; // Advance the song position pointer (in sixteenth notes)
@@ -135,7 +165,7 @@ async function startMetronome() {
   nextNoteTime = audioCtx.currentTime;
   console.log(`Starting metronome at ${bpm} BPM...`);
   worker.postMessage({cmd: 'start', interval: 60000 / bpm / ppqn});
-  requestAnimationFrame(updateGui); // TODO store animationFrameId
+  requestAnimationFrame(updateGui); // TODO store animationFrameId and eventually stop it in stopMetronome to avoid unnecessary CPU usage when stopped
 }
 
 function stopMetronome() {
@@ -146,6 +176,16 @@ function stopMetronome() {
 
 document.getElementById('playbtn').addEventListener('click', () => startMetronome());
 document.getElementById('stopbtn').addEventListener('click', () => stopMetronome());
+
+verovioWorker.onmessage = function(e){
+  if (e.data.cmd === 'svg') {
+    document.body.insertAdjacentHTML('beforeend', e.data.data);
+    timemap = e.data.metadata;
+    window.timemap = timemap; // for debugging purposes
+    //console.log(timemap);
+  }
+};
+verovioWorker.postMessage({cmd: 'render', options: {inputFrom: 'mei'}, url: './4_4_beat.mei.xml'});
 </script>
 </body>
 </html>

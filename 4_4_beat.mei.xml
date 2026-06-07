@@ -7,24 +7,26 @@
         <body>
             <mdiv>
                 <score>
-                    <scoreDef meter.count="4" meter.unit="4" key.sig="" key.mode="major">
+                    <scoreDef meter.count="4" meter.unit="4" key.sig="0" key.mode="major">
                         <staffGrp>
                             <staffDef n="1" lines="5" clef.shape="G" clef.line="2"/>
                         </staffGrp>
                     </scoreDef>
                     <section>
-                        <expansion xml:id="expansion-default" plist="#m1 #m1 #m1 #m1"/>
-                        <measure xml:id="m1" n="1" left="rptstart" right="rptend">
-                            <staff n="1">
-                                <layer n="1">
-                                    <note pname="g" oct="4" dur="4" head.shape="x"/>
-                                    <note pname="g" oct="4" dur="4" head.shape="x"/>
-                                    <note pname="g" oct="4" dur="4" head.shape="x"/>
-                                    <note pname="g" oct="4" dur="4" head.shape="x"/>
-                                </layer>
-                            </staff>
-                            <repeatMark staff="1" tstamp="5">x3</repeatMark>
-                        </measure>
+                        <expansion xml:id="expansion-default" plist="#s1 #s1 #s1 #s1"/>
+                        <section xml:id="s1">
+                            <measure xml:id="m1" n="1" left="rptstart" right="rptend">
+                                <staff n="1">
+                                    <layer n="1">
+                                        <note pname="g" oct="4" dur="4" head.shape="x"/>
+                                        <note pname="g" oct="4" dur="4" head.shape="x"/>
+                                        <note pname="g" oct="4" dur="4" head.shape="x"/>
+                                        <note pname="g" oct="4" dur="4" head.shape="x"/>
+                                    </layer>
+                                </staff>
+                                <repeatMark staff="1" tstamp="5">x3</repeatMark>
+                            </measure>
+                        </section>
                     </section>
                 </score>
             </mdiv>

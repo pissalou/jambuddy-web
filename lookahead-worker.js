@@ -6,6 +6,7 @@ self.onmessage = function(e) {
     console.log(`Lookahead worker started with interval ${checkInterval.toFixed(3)}ms`);
     timerId = setInterval(() => self.postMessage('tick'), checkInterval);
   } else if (e.data === 'stop') {
+    console.log('Lookahead worker stopping');
     clearInterval(timerId);
     timerId = null;
   }
