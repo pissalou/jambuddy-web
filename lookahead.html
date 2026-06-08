@@ -5,12 +5,14 @@
     <title>LookAhead</title>
 </head>
 <body>
+<div id="settings" style="float: right;">&nbsp;</div>
 <div id="midi-transport">
     <button id="playbtn" style="height: 2.1em">&#9654;</button>
     <button id="stopbtn">&#x23F9;</button>
     <span id="timeline">00:00.000</span>
 </div>
 <script type="module">
+import {WebMidi} from 'https://cdn.jsdelivr.net/npm/webmidi@3.1.16/+esm';
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 const worker = new Worker('./lookahead-worker.js');
 const verovioWorker = new Worker('./verovio-worker.js');
@@ -39,14 +41,23 @@ function base64ToArrayBuffer(base64) {
 }
 
 let midiOutput = null;
-// 1. Request access to user's MIDI hardware
-navigator.requestMIDIAccess().then(access => {
-  const outputs = Array.from(access.outputs.values());
-  if (outputs.length > 0) {
-    midiOutput = outputs[outputs.length - 1]; // Grab the last available MIDI port
+let settings = document.getElementById("settings");
+WebMidi
+  .enable()
+  .then(() => {
+  // Display available MIDI input devices
+  if (WebMidi.inputs.length < 1) {
+    settings.innerHTML+= "No device detected.";
+  } else {
+    settings.innerHTML+= "<br>Available MIDI input devices: <br>";
+    WebMidi.inputs.forEach((device, index) => {
+      settings.innerHTML+= `${index}: ${device.name} <br>`;
+      // TODO present devices better and allow user to select one or more devices
+    });
+    midiOutput = WebMidi.outputs[WebMidi.outputs.length - 1];
     console.log(`Connected to MIDI Output Device: ${midiOutput.name}`);
-  }
-});
+    window.midiOutput = midiOutput; // for debugging purposes
+  }}).catch(err => alert(err));
 
 // 2. Pre-decode the base64 audio string into an AudioBuffer
 async function initAudio() {
@@ -76,13 +87,10 @@ function scheduleSample(time) { // rename scheduleClick(audioTimestamp) for cons
 
 function scheduleMIDIEvent(timestamp) {
   if (!midiOutput) return;
-  // MIDI data payload: [Status Byte, Data1 (Note), Data2 (Velocity)]
-  const noteOn = [0x99, 75, 100];  // Note On, Middle C (60), Velocity 100
-  const noteOff = [0x89, 75, 0];   // Note Off, Middle C (60)
   // Send the Note On message stamped with the precise future timestamp
-  midiOutput.send(noteOn, timestamp);
+  midiOutput.playNote(75, {channels: [10], attack: 0.8, time: timestamp});
   // Schedule the Note Off message 500ms later
-  //midiOutput.send(noteOff, timestamp + 500);
+  //midiOutput.stopNode(75, {time: timestamp + 500});
 }
 
 function audio2midiTimestamp(audioTargetTime) {
