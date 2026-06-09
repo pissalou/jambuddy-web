@@ -21,13 +21,16 @@ let bpm = 120;
 const ppqn = 24; // Pulses Per Quarter Note (standard MIDI timing)
 let lookAhead = 0.050; // 50ms look-ahead window
 // State for the midi-transport element
+let intervalMs = 60000 / bpm / ppqn; // How often the worker should send 'tick' messages (in milliseconds)
 let spp = 0; // song position pointer (in sixteenth notes)
-let startTime = audioCtx.currentTime;
+let audioStartTime = 0; // Will be set to audio context time when the metronome started
 let nextSppTime = 0.0; // When the next sixteenth note should occur (in seconds)
 let nextNoteTime = 0.0;  // When the next beat should occur (in seconds) TODO rename to nextClickTime for consistency
 let lastVisualizedSppTime = -1;
 let clickBuffer = null; // This will hold our decoded audio data
 const BASE64_CLICK_SOUND = "UklGRiwBAABXQVZFZm10IBAAAAABAAEAIlYAACJWAAABAAgAZGF0YQgBAACAs9319+TAkWA2GhEcOGCNttXj4Muqglo6JyUyTXGWtsvTzLeZd1dANDZFXnybs8LEu6eMcFdHQEVUa4Wdr7i3rZqDbFlOS1JhdYqdqq+soZB9alxVVV1rfI2cpaeil4h4amBbXmZygY+aoKCakIN2amNhZW14hI+Xm5mTin90bGdna3N8ho+VlpSOhnx0bmtscHd/iI6Sko+Kgnt0cG5wdHuCiI2Pj4uGgHp1cnFzeH2DiIuNi4iDfnl2dHR2en+EiIqKiYaBfXl3dnZ5fICEh4iIh4SAfHp4d3h7foGEhoeGhYJ/fHp5eXp8f4KEhYaFg4F+fHt6ent9gIKEhYWEgoB+fHt7e30=";
+// Ensure audio is decoded before starting the timer
+await initAudio();
 
 // 0. Convert Base64 to an ArrayBuffer
 function base64ToArrayBuffer(base64) {
@@ -72,14 +75,23 @@ async function initAudio() {
   }
 }
 
+// 2b. For elapsed time display or logging:
+function elapsedMs(timeS = audioCtx.currentTime) {
+  return (timeS - audioStartTime) * 1000;
+}
+
+function scheduledMs(time) {
+  return elapsedMs(time);
+}
+
 // 3. Schedule the sample to play at an exact hardware time
 function scheduleSample(time) { // rename scheduleClick(audioTimestamp) for consistency
   if (!clickBuffer) return;
   // AudioBufferSourceNodes are one-time-use items.
   // You must create a new pointer wrapper every time you want to play it.
   const source = audioCtx.createBufferSource();
-  source.buffer = clickBuffer;
-  console.log(`Click`);
+  source.buffer = clickBuffer;  // TODO rename metronomeSoundBuffer for clarity
+  console.log(`MetronomeClick@${scheduledMs(time).toFixed(1)}ms`);
   source.connect(audioCtx.destination);
   // Tell the hardware clock exactly when to play this buffer
   source.start(time);
@@ -102,10 +114,10 @@ function audio2midiTimestamp(audioTargetTime) {
 
 function getSvgElementsAtTime(audioTargetTime) {
   if (!timemap || timemap.length === 0) return { on: [], off: [] };
-  const elapsedMs = (audioTargetTime - startTime) * 1000;
+  const targetElapsedMs = (audioTargetTime - audioStartTime) * 1000;
   let closest = timemap[0];
   for (const entry of timemap) {
-    if (entry.tstamp <= elapsedMs) {
+    if (entry.tstamp <= targetElapsedMs) {
       closest = entry;
     } else {
       break; // timemap is sorted by tstamp
@@ -131,13 +143,13 @@ worker.onmessage = function(e) {
       document.getElementById(id).style.fill = ''; // Highlight the element that should be played
     });
     while (nextSppTime < audioCtx.currentTime + lookAhead) {
-      nextSppTime = startTime + spp * (60.0 / bpm / 4); // Time duration of a sixteenth note TODO calculate with ppqn
-      spp += 1; // Advance the song position pointer (in sixteenth notes)
+      nextSppTime = audioStartTime + spp * (60.0 / bpm / 4); // Time duration of a sixteenth note TODO calculate with ppqn
       if (spp % 4 === 0) { // Only schedule on quarter notes (every 4 sixteenth notes)
         scheduleSample(nextNoteTime);  // rename scheduleClick
         scheduleMIDIEvent(audio2midiTimestamp(nextNoteTime));
         nextNoteTime += 60.0 / bpm;
       }
+      spp += 1; // Advance the song position pointer (in sixteenth notes)
     }
   }
 };
@@ -167,12 +179,11 @@ async function startMetronome() {
   if (audioCtx.state === 'suspended') {
     await audioCtx.resume();
   }
-  // Ensure audio is decoded before starting the timer
-  await initAudio();
-  nextSppTime = audioCtx.currentTime;
-  nextNoteTime = audioCtx.currentTime;
+  audioStartTime = audioCtx.currentTime;
+  nextSppTime = audioStartTime;
+  nextNoteTime = audioStartTime;
   console.log(`Starting metronome at ${bpm} BPM...`);
-  worker.postMessage({cmd: 'start', interval: 60000 / bpm / ppqn});
+  worker.postMessage({cmd: 'start', interval: intervalMs});
   requestAnimationFrame(updateGui); // TODO store animationFrameId and eventually stop it in stopMetronome to avoid unnecessary CPU usage when stopped
 }
 
