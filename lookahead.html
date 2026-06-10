@@ -118,18 +118,14 @@ function audio2midiTimestamp(audioTargetTime) {
   return performance.now() + (secondsInFuture * 1000);
 }
 
-function getSvgElementsAtTime(audioTargetTime) {
-  if (!timemap || timemap.length === 0) return { on: [], off: [] };
+let timemapCursor = 0; // This will track our position in the timemap for efficient lookups
+function findElementsInTimemap(audioTargetTime) {
   const targetElapsedMs = (audioTargetTime - audioStartTime) * 1000;
-  let closest = timemap[0];
-  for (const entry of timemap) {
-    if (entry.tstamp <= targetElapsedMs) {
-      closest = entry;
-    } else {
-      break; // timemap is sorted by tstamp
-    }
+  while (timemapCursor < timemap.length - 1 &&
+         timemap[timemapCursor + 1].tstamp <= targetElapsedMs) {
+    timemapCursor++;
   }
-  return closest;
+  return timemap[timemapCursor];
 }
 
 // 4. The MIDI clock pulsating loop
@@ -158,15 +154,15 @@ function updateGui() {
   const currentTime = audioCtx.currentTime;
   // Check if the audio clock has crossed into the next scheduled note time,
   // and make sure we haven't already updated for this specific spp.
-  let svgElementMap = getSvgElementsAtTime(currentTime);
-  //console.log(svgElementMap);  // map of on/off notes as arrays
-  if (!svgElementMap.on) { stopMetronome(); return; }// No more events in the timemap, stop
-  svgElementMap.on.forEach(id => {
+  let elementsInTimemap = findElementsInTimemap(currentTime);
+  //console.log(elementsInTimemap);  // map of on/off notes as arrays
+  if (!elementsInTimemap.on) { stopMetronome(); return; }// No more events in the timemap, stop
+  elementsInTimemap.on.forEach(id => {
     id = id.replace(/-rend\d+$/,'');
     //console.log(`Highlighting element ${id} at time ${currentTime.toFixed(3)}s`);
     document.getElementById(id).style.fill = 'red'; // Highlight the element that should be played
   });
-  svgElementMap.off?.forEach(id => {
+  elementsInTimemap.off?.forEach(id => {
     id = id.replace(/-rend\d+$/,'');
     document.getElementById(id).style.fill = ''; // Highlight the element that should be played
   });
