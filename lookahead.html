@@ -12,9 +12,11 @@
     <span id="timeline">00:00.000</span>
 </div>
 <script type="module">
-import {WebMidi} from 'https://cdn.jsdelivr.net/npm/webmidi@3.1.16/+esm';
+import {WebMidi, Message} from 'https://cdn.jsdelivr.net/npm/webmidi@3.1.16/+esm';
+import Midi3ByteBuffer from './midibuffer.js'; // TODO need a fourth byte for timestamp
+const midiBuffer = new Midi3ByteBuffer(1024); // Buffer to hold incoming MIDI messages
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-const worker = new Worker('./lookahead-worker.js');
+const worker = new Worker('./lookahead-worker.js');  // TODO rename clock-worker.js for clarity
 const verovioWorker = new Worker('./verovio-worker.js');
 let timemap = null; // This will hold the mapping of musical time to realtime for visual sync
 let bpm = 120;
@@ -43,6 +45,7 @@ function base64ToArrayBuffer(base64) {
   return bytes.buffer;
 }
 
+let midiInput = null;
 let midiOutput = null;
 let settings = document.getElementById("settings");
 WebMidi
@@ -57,8 +60,11 @@ WebMidi
       settings.innerHTML+= `${index}: ${device.name} <br>`;
       // TODO present devices better and allow user to select one or more devices
     });
+    midiInput = WebMidi.inputs[WebMidi.inputs.length - 1];
+    console.log(`Connected to MIDI Input Device: ${midiInput.name}`);
     midiOutput = WebMidi.outputs[WebMidi.outputs.length - 1];
     console.log(`Connected to MIDI Output Device: ${midiOutput.name}`);
+    window.midiInput = midiInput; // for debugging purposes
     window.midiOutput = midiOutput; // for debugging purposes
   }}).catch(err => alert(err));
 
@@ -126,10 +132,14 @@ function getSvgElementsAtTime(audioTargetTime) {
   return closest;
 }
 
-// 4. The worker heartbeat loop
+// 4. The MIDI clock pulsating loop
 worker.onmessage = function(e) {
   if (e.data === 'tick') {
     // console.log(`Received tick at ${audioCtx.currentTime.toFixed(3) * 1000}ms`);
+    midiBuffer.processUnread((status, data1, data2) => {
+        let msg = new Message([status, data1, data2]);
+        if (msg.type === "noteon") console.log(`ProcessNote#${data1}@${elapsedMs(e.timestamp).toFixed(1)}ms [ch. ${msg.channel}, vel. ${data2}]`);
+    });
     while (nextSppTime < audioCtx.currentTime + lookAhead) {
       nextSppTime = audioStartTime + spp * (60.0 / bpm / 4); // Time duration of a sixteenth note TODO calculate with ppqn
       if (spp % 4 === 0) { // Only schedule on quarter notes (every 4 sixteenth notes)
@@ -184,6 +194,10 @@ async function startMetronome() {
   nextNoteTime = audioStartTime;
   console.log(`Starting metronome at ${bpm} BPM...`);
   worker.postMessage({cmd: 'start', interval: intervalMs});
+  midiInput.addListener("noteon", e => {
+    console.log(`ReceiveNote#${e.note.number}@${elapsedMs().toFixed(1)}ms`);
+    midiBuffer.pushRawArray(e.message.data); // TODO add timestamp
+  });
   requestAnimationFrame(updateGui); // TODO store animationFrameId and eventually stop it in stopMetronome to avoid unnecessary CPU usage when stopped
 }
 
