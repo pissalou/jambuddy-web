@@ -19,7 +19,7 @@ const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 const worker = new Worker('./lookahead-worker.js');  // TODO rename clock-worker.js for clarity
 const verovioWorker = new Worker('./verovio-worker.js');
 let timemap = null; // This will hold the mapping of musical time to realtime for visual sync
-let bpm = 60;
+let bpm = 30;
 const ppqn = 24; // Pulses Per Quarter Note (standard MIDI timing)
 let lookAhead = 0.050; // 50ms look-ahead window
 // State for the midi-transport element
@@ -27,7 +27,6 @@ let intervalMs = 60000 / bpm / ppqn; // How often the worker should send 'tick' 
 let spp = 0; // song position pointer (in sixteenth notes)
 let audioStartTime = 0; // Will be set to audio context time when the metronome started
 let nextSppTime = 0.0; // When the next sixteenth note should occur (in seconds)
-let nextNoteTime = 0.0;  // When the next beat should occur (in seconds) TODO rename to nextClickTime for consistency
 let lastVisualizedSppTime = -1;
 let clickBuffer = null; // This will hold our decoded audio data
 const BASE64_CLICK_SOUND = "UklGRiwBAABXQVZFZm10IBAAAAABAAEAIlYAACJWAAABAAgAZGF0YQgBAACAs9319+TAkWA2GhEcOGCNttXj4Muqglo6JyUyTXGWtsvTzLeZd1dANDZFXnybs8LEu6eMcFdHQEVUa4Wdr7i3rZqDbFlOS1JhdYqdqq+soZB9alxVVV1rfI2cpaeil4h4amBbXmZygY+aoKCakIN2amNhZW14hI+Xm5mTin90bGdna3N8ho+VlpSOhnx0bmtscHd/iI6Sko+Kgnt0cG5wdHuCiI2Pj4uGgHp1cnFzeH2DiIuNi4iDfnl2dHR2en+EiIqKiYaBfXl3dnZ5fICEh4iIh4SAfHp4d3h7foGEhoeGhYJ/fHp5eXp8f4KEhYaFg4F+fHt6ent9gIKEhYWEgoB+fHt7e30=";
@@ -141,14 +140,15 @@ worker.onmessage = function(e) {
             findElementsInTimemap(currentTime, 0.05).actualOnTStamp = {id: currentTime}; // Store the actual timestamp of this event
         }
     });
-    while (nextSppTime < audioCtx.currentTime + lookAhead) {
-      nextSppTime = audioStartTime + spp * (60.0 / bpm / 4); // Time duration of a sixteenth note TODO calculate with ppqn
-      if (spp % 4 === 0) { // Only schedule on quarter notes (every 4 sixteenth notes)
-        scheduleSample(nextNoteTime);  // rename scheduleClick
-        scheduleMIDIEvent(audio2midiTimestamp(nextNoteTime));
-        nextNoteTime += 60.0 / bpm;
+    while (true) {
+      const candidateTime = audioStartTime + spp * (60.0 / bpm / 4);
+      if (candidateTime >= audioCtx.currentTime + lookAhead) break; // check new value
+      nextSppTime = candidateTime;
+      if (spp % 4 === 0) {
+        scheduleSample(nextSppTime);
+        scheduleMIDIEvent(audio2midiTimestamp(nextSppTime));
       }
-      spp += 1; // Advance the song position pointer (in sixteenth notes)
+      spp += 1;
     }
   }
 };
@@ -172,15 +172,11 @@ function updateGui() {
     id = id.replace(/-rend\d+$/,'');
     document.getElementById(id).style.fill = ''; // Highlight the element that should be played
   });
-  if (nextSppTime > currentTime && lastVisualizedSppTime !== nextSppTime) {
-    // Check if a spp JUST happened in the last frame window
-    // (We look slightly backward to see if the playback line crossed a marker)
-    const timeSinceLastUpdate = currentTime - (nextSppTime - (60.0 / bpm / 4));
-    if (timeSinceLastUpdate >= 0 && timeSinceLastUpdate < 0.05) {  // TODO make this threshold configurable
-      visualTimeline.innerText = `00:${String((spp / 4).toFixed(3)).padStart(6, '0')}`; // Update the visual timeline
-      // Lock this spp time so we don't update again until the next spp
-      lastVisualizedSppTime = nextSppTime;
-    }
+  const step = 60.0 / bpm / 4;
+  const visualSpp = Math.max(0, Math.floor((currentTime - audioStartTime) / step));
+  if (lastVisualizedSppTime !== visualSpp) {
+    visualTimeline.innerText = ` ${(visualSpp / 4).toFixed(3)}`;
+    lastVisualizedSppTime = visualSpp;
   }
   // Tell the browser to run this loop again on the next monitor refresh pass
   requestAnimationFrame(updateGui);
@@ -192,8 +188,7 @@ async function startMetronome() {
     await audioCtx.resume();
   }
   audioStartTime = audioCtx.currentTime + 0.045; // Start a little in the future to give the system time to prepare
-  nextSppTime = audioStartTime;  // TODO remove spp and nextSppTime variables
-  nextNoteTime = audioStartTime;
+  nextSppTime = audioStartTime;
   console.log(`Starting metronome at ${bpm} BPM...`);
   worker.postMessage({cmd: 'start', interval: intervalMs});
   midiInput.addListener("noteon", e => {
@@ -220,7 +215,7 @@ verovioWorker.onmessage = function(e){
     //console.log(timemap);
   }
 };
-verovioWorker.postMessage({cmd: 'render', options: {midiTempoAdjustment: 0.5, inputFrom: 'mei'}, url: './4_4_beat.mei.xml'});
+verovioWorker.postMessage({cmd: 'render', options: {midiTempoAdjustment: bpm / 120, inputFrom: 'mei'}, url: './4_4_beat.mei.xml'});
 </script>
 </body>
 </html>
