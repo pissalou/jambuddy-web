@@ -38,6 +38,20 @@ self.onmessage = async function (e) {
       tk.loadData(mei);
       let svg = tk.renderToSVG();
       let timemap = tk.renderToTimemap();
+      timemap.forEach((item) => {
+        let onpitches = []
+        let offpitches = []
+        item.on?.forEach((noteId) => {
+            let midiData = tk.getMIDIValuesForElement(noteId);
+            onpitches.push(midiData.pitch);
+        });
+        item.off?.forEach((noteId) => {
+            let midiData = tk.getMIDIValuesForElement(noteId);
+            offpitches.push(midiData.pitch);
+        });
+        if (onpitches.length) item.onpitches = onpitches;
+        if (offpitches.length) item.offpitches = offpitches;
+      });
       //console.log(svg)
       self.postMessage({ cmd: 'svg', data: svg, metadata: timemap });
     } catch (error) {

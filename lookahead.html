@@ -19,7 +19,7 @@ const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 const worker = new Worker('./lookahead-worker.js');  // TODO rename clock-worker.js for clarity
 const verovioWorker = new Worker('./verovio-worker.js');
 let timemap = null; // This will hold the mapping of musical time to realtime for visual sync
-let bpm = 120;
+let bpm = 60;
 const ppqn = 24; // Pulses Per Quarter Note (standard MIDI timing)
 let lookAhead = 0.050; // 50ms look-ahead window
 // State for the midi-transport element
@@ -119,10 +119,11 @@ function audio2midiTimestamp(audioTargetTime) {
 }
 
 let timemapCursor = 0; // This will track our position in the timemap for efficient lookups
-function findElementsInTimemap(audioTargetTime) {
-  const targetElapsedMs = (audioTargetTime - audioStartTime) * 1000;
+const lookBehind = 0.05; // How far back in time to look for events (in seconds)
+function findElementsInTimemap(currentTime = audioCtx.currentTime, lookBehind = 0) {
+  const elapsedMs = (currentTime - audioStartTime + lookBehind) * 1000;
   while (timemapCursor < timemap.length - 1 &&
-         timemap[timemapCursor + 1].tstamp <= targetElapsedMs) {
+         timemap[timemapCursor + 1].tstamp <= elapsedMs) {
     timemapCursor++;
   }
   return timemap[timemapCursor];
@@ -134,7 +135,11 @@ worker.onmessage = function(e) {
     // console.log(`Received tick at ${audioCtx.currentTime.toFixed(3) * 1000}ms`);
     midiBuffer.processUnread((status, data1, data2) => {
         let msg = new Message([status, data1, data2]);
-        if (msg.type === "noteon") console.log(`ProcessNote#${data1}@${elapsedMs(e.timestamp).toFixed(1)}ms [ch. ${msg.channel}, vel. ${data2}]`);
+        if (msg.type === "noteon") {
+            const currentTime = audioCtx.currentTime;
+            console.log(`ProcessNote#${data1}@${elapsedMs(currentTime).toFixed(1)}ms [ch. ${msg.channel}, vel. ${data2}]`);
+            findElementsInTimemap(currentTime, 0.05).actualOnTStamp = {id: currentTime}; // Store the actual timestamp of this event
+        }
     });
     while (nextSppTime < audioCtx.currentTime + lookAhead) {
       nextSppTime = audioStartTime + spp * (60.0 / bpm / 4); // Time duration of a sixteenth note TODO calculate with ppqn
@@ -160,7 +165,8 @@ function updateGui() {
   elementsInTimemap.on.forEach(id => {
     id = id.replace(/-rend\d+$/,'');
     //console.log(`Highlighting element ${id} at time ${currentTime.toFixed(3)}s`);
-    document.getElementById(id).style.fill = 'red'; // Highlight the element that should be played
+    // TODO not highlight the note in red right away, only after a certain threshold has passed without the correct MIDI note being received
+    document.getElementById(id).style.fill = (elementsInTimemap.actualOnTStamp?.id) ? 'blue' : 'red'; // Highlight the element that should be played
   });
   elementsInTimemap.off?.forEach(id => {
     id = id.replace(/-rend\d+$/,'');
@@ -185,8 +191,8 @@ async function startMetronome() {
   if (audioCtx.state === 'suspended') {
     await audioCtx.resume();
   }
-  audioStartTime = audioCtx.currentTime;
-  nextSppTime = audioStartTime;
+  audioStartTime = audioCtx.currentTime + 0.045; // Start a little in the future to give the system time to prepare
+  nextSppTime = audioStartTime;  // TODO remove spp and nextSppTime variables
   nextNoteTime = audioStartTime;
   console.log(`Starting metronome at ${bpm} BPM...`);
   worker.postMessage({cmd: 'start', interval: intervalMs});
@@ -214,7 +220,7 @@ verovioWorker.onmessage = function(e){
     //console.log(timemap);
   }
 };
-verovioWorker.postMessage({cmd: 'render', options: {inputFrom: 'mei'}, url: './4_4_beat.mei.xml'});
+verovioWorker.postMessage({cmd: 'render', options: {midiTempoAdjustment: 0.5, inputFrom: 'mei'}, url: './4_4_beat.mei.xml'});
 </script>
 </body>
 </html>
