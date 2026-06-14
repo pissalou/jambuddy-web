@@ -3,6 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <title>LookAhead</title>
+    <style>
+        g.highlight {
+            filter: url(assets/filters.svg#highlighting);
+        }
+    </style>
 </head>
 <body>
 <div id="settings" style="float: right;">&nbsp;</div>
@@ -165,8 +170,13 @@ function updateGui() {
   elementsInTimemap.on.forEach(id => {
     id = id.replace(/-rend\d+$/,'');
     //console.log(`Highlighting element ${id} at time ${currentTime.toFixed(3)}s`);
-    // TODO not highlight the note in red right away, only after a certain threshold has passed without the correct MIDI note being received
-    document.getElementById(id).style.fill = (elementsInTimemap.actualOnTStamp?.id) ? 'blue' : 'red'; // Highlight the element that should be played
+    // We need to highlight the note in red only after a certain threshold has passed without the correct MIDI note being received
+    // meaning "outside the pocket" and thus a missed note
+    const el = document.getElementById(id);
+    document.querySelectorAll('g.note').forEach(el => el.classList.remove('highlight'));
+    el.classList.add('highlight'); // Highlight the element that should be played
+    const actualOnTStamp = elementsInTimemap.actualOnTStamp;
+    el.style.fill = (actualOnTStamp?.id) ? 'blue' : 'red'; // Highlight the element that should be played
   });
   elementsInTimemap.off?.forEach(id => {
     id = id.replace(/-rend\d+$/,'');
