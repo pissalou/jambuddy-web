@@ -160,6 +160,7 @@ worker.onmessage = function(e) {
 
 // 4b. Visual feedback loop (runs in the main thread, synced to the display refresh rate)
 const visualTimeline = document.getElementById('timeline');
+let animationFrameId = null;
 function updateGui() {
   const currentTime = audioCtx.currentTime;
   // Check if the audio clock has crossed into the next scheduled note time,
@@ -189,7 +190,7 @@ function updateGui() {
     lastVisualizedSppTime = visualSpp;
   }
   // Tell the browser to run this loop again on the next monitor refresh pass
-  requestAnimationFrame(updateGui);
+  animationFrameId = requestAnimationFrame(updateGui);
 }
 
 // 5. Control triggers
@@ -205,11 +206,15 @@ async function startMetronome() {
     console.log(`ReceiveNote#${e.note.number}@${elapsedMs().toFixed(1)}ms`);
     midiBuffer.pushRawArray(e.message.data); // TODO add timestamp
   });
-  requestAnimationFrame(updateGui); // TODO store animationFrameId and eventually stop it in stopMetronome to avoid unnecessary CPU usage when stopped
+  animationFrameId = requestAnimationFrame(updateGui); // TODO store animationFrameId and eventually stop it in stopMetronome to avoid unnecessary CPU usage when stopped
 }
 
 function stopMetronome() {
   worker.postMessage('stop');
+  if (animationFrameId !== null) {
+    cancelAnimationFrame(animationFrameId);
+    animationFrameId = null;
+  }
   //spp = 0;
   // visualTimeline.innerText = `00:00.000`;
 }
